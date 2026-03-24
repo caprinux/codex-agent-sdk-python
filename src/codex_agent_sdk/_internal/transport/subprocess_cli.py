@@ -6,8 +6,8 @@ import json
 import os
 import shutil
 import signal
-import sys
-from typing import Any, AsyncIterator, Callable, Optional, Sequence
+import subprocess
+from typing import Any, AsyncIterator, Callable, Optional
 
 import anyio
 import anyio.abc
@@ -21,14 +21,10 @@ from codex_agent_sdk._errors import (
 )
 from codex_agent_sdk._internal.transport._base import Transport
 from codex_agent_sdk.types import (
-    ApprovalPolicy,
     CodexAgentOptions,
     ImageInput,
-    ReasoningEffort,
-    SandboxMode,
     TextInput,
     UserInput,
-    WebSearch,
 )
 
 
@@ -87,7 +83,6 @@ class SubprocessCLITransport(Transport):
         self._resume_thread_id = resume_thread_id
         self._on_stderr = on_stderr
         self._process: Optional[anyio.abc.Process] = None
-        self._stderr_buffer: list[str] = []
 
     # ------------------------------------------------------------------
     # Command building
@@ -133,9 +128,21 @@ class SubprocessCLITransport(Transport):
                 if isinstance(part, ImageInput):
                     cmd.extend(["--image", part.path])
 
-        # Output schema
+        # Output schema (file path or inline JSON string written to a temp file)
         if opts.output_schema_file:
             cmd.extend(["--output-schema", opts.output_schema_file])
+        elif opts.output_schema:
+            # Inline schema string — write to a temp file that the caller
+            # is responsible for cleaning up.
+            import tempfile
+
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, prefix="codex_schema_"
+            )
+            tmp.write(opts.output_schema)
+            tmp.close()
+            self._schema_tmp_path = tmp.name
+            cmd.extend(["--output-schema", tmp.name])
 
         # Config overrides (--config key=value)
         config = dict(opts.config_overrides)
@@ -165,15 +172,6 @@ class SubprocessCLITransport(Transport):
         env["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] = "codex_sdk_py"
         return env
 
-    def _get_prompt_text(self) -> str:
-        if isinstance(self._prompt, str):
-            return self._prompt
-        parts: list[str] = []
-        for part in self._prompt:
-            if isinstance(part, TextInput):
-                parts.append(part.text)
-        return "\n\n".join(parts)
-
     # ------------------------------------------------------------------
     # Transport interface
     # ------------------------------------------------------------------
@@ -184,9 +182,9 @@ class SubprocessCLITransport(Transport):
 
         self._process = await anyio.open_process(
             cmd,
-            stdin=anyio.abc.Process.PIPE if True else None,  # always pipe
-            stdout=anyio.abc.Process.PIPE,
-            stderr=anyio.abc.Process.PIPE,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             env=env,
         )
 
@@ -227,15 +225,17 @@ class SubprocessCLITransport(Transport):
         if self._process is None:
             return
 
-        # Collect stderr
+        # Collect stderr with a timeout to avoid hanging if the process
+        # never closes its stderr fd.
         stderr_text = ""
         if self._process.stderr is not None:
             try:
-                async for chunk in TextReceiveStream(self._process.stderr):
-                    stderr_text += chunk
-                    if self._on_stderr:
-                        self._on_stderr(chunk)
-            except anyio.ClosedResourceError:
+                with anyio.fail_after(5):
+                    async for chunk in TextReceiveStream(self._process.stderr):
+                        stderr_text += chunk
+                        if self._on_stderr:
+                            self._on_stderr(chunk)
+            except (TimeoutError, anyio.ClosedResourceError):
                 pass
 
         # Give the process a moment to exit gracefully
@@ -250,11 +250,20 @@ class SubprocessCLITransport(Transport):
             except (TimeoutError, ProcessLookupError):
                 try:
                     self._process.kill()
+                    await self._process.wait()
                 except ProcessLookupError:
                     pass
 
+        # Clean up temp schema file if we created one
+        schema_tmp = getattr(self, "_schema_tmp_path", None)
+        if schema_tmp:
+            try:
+                os.unlink(schema_tmp)
+            except OSError:
+                pass
+
         exit_code = self._process.returncode
-        if exit_code is not None and exit_code not in (0, -signal.SIGTERM, None):
+        if exit_code is not None and exit_code not in (0, -signal.SIGTERM):
             raise ProcessError(exit_code, stderr_text)
 
     def is_ready(self) -> bool:

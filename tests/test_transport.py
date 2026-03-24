@@ -273,19 +273,28 @@ class TestBuildEnv:
 
 
 # ---------------------------------------------------------------------------
-# Prompt text extraction
+# Prompt text extraction (lives on Query, not transport)
 # ---------------------------------------------------------------------------
 
 
 class TestGetPromptText:
+    """Tests for Query._get_prompt_text() which extracts text from UserInput."""
+
+    def _make_query(self, prompt: object) -> object:
+        from codex_agent_sdk._internal.query import Query
+
+        q = Query.__new__(Query)
+        q._prompt = prompt
+        return q
+
     def test_string_prompt(self) -> None:
-        t = _make_transport(prompt="Hello world")
-        assert t._get_prompt_text() == "Hello world"
+        q = self._make_query("Hello world")
+        assert q._get_prompt_text() == "Hello world"
 
     def test_structured_text_only(self) -> None:
         prompt = [TextInput(text="Part 1"), TextInput(text="Part 2")]
-        t = _make_transport(prompt=prompt)
-        assert t._get_prompt_text() == "Part 1\n\nPart 2"
+        q = self._make_query(prompt)
+        assert q._get_prompt_text() == "Part 1\n\nPart 2"
 
     def test_structured_mixed_ignores_images(self) -> None:
         prompt = [
@@ -293,13 +302,13 @@ class TestGetPromptText:
             ImageInput(path="/img.png"),
             TextInput(text="And this"),
         ]
-        t = _make_transport(prompt=prompt)
-        assert t._get_prompt_text() == "Describe this\n\nAnd this"
+        q = self._make_query(prompt)
+        assert q._get_prompt_text() == "Describe this\n\nAnd this"
 
     def test_structured_images_only(self) -> None:
         prompt = [ImageInput(path="/a.png"), ImageInput(path="/b.png")]
-        t = _make_transport(prompt=prompt)
-        assert t._get_prompt_text() == ""
+        q = self._make_query(prompt)
+        assert q._get_prompt_text() == ""
 
 
 # ---------------------------------------------------------------------------

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Optional
-
-import anyio
-import anyio.abc
+from typing import AsyncIterator, Optional
 
 from codex_agent_sdk._internal.message_parser import parse_event
 from codex_agent_sdk._internal.transport._base import Transport
