@@ -27,8 +27,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/anthropics/codex-agent-sdk-python"
-Repository = "https://github.com/anthropics/codex-agent-sdk-python"
+Homepage = "https://github.com/caprinux/codex-agent-sdk-python"
+Repository = "https://github.com/caprinux/codex-agent-sdk-python"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/codex_agent_sdk"]

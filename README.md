@@ -7,7 +7,7 @@ Follows the same architectural pattern as [claude-agent-sdk-python](https://gith
 ## Installation
 
 ```bash
-pip install codex-agent-sdk
+pip install git+https://github.com/caprinux/codex-agent-sdk-python.git
 ```
 
 **Prerequisites:** The [Codex CLI](https://github.com/openai/codex) must be installed and available on your `$PATH`:
