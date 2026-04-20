@@ -115,6 +115,9 @@ class CodexAgentOptions:
     base_url: Optional[str] = None
     api_key: Optional[str] = None
 
+    # Instructions (prepended to the prompt as system-level context)
+    developer_instructions: Optional[str] = None
+
     # Misc
     profile: Optional[str] = None
     skip_git_repo_check: bool = False

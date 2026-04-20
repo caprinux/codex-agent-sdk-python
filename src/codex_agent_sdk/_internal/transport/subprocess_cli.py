@@ -144,6 +144,18 @@ class SubprocessCLITransport(Transport):
             self._schema_tmp_path = tmp.name
             cmd.extend(["--output-schema", tmp.name])
 
+        # Developer instructions via temp file
+        if opts.developer_instructions:
+            import tempfile
+
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".md", delete=False, prefix="codex_instructions_"
+            )
+            tmp.write(opts.developer_instructions)
+            tmp.close()
+            self._instructions_tmp_path = tmp.name
+            cmd.extend(["--config", f"instructions_file={tmp.name}"])
+
         # Config overrides (--config key=value)
         config = dict(opts.config_overrides)
         if opts.base_url:
@@ -254,13 +266,14 @@ class SubprocessCLITransport(Transport):
                 except ProcessLookupError:
                     pass
 
-        # Clean up temp schema file if we created one
-        schema_tmp = getattr(self, "_schema_tmp_path", None)
-        if schema_tmp:
-            try:
-                os.unlink(schema_tmp)
-            except OSError:
-                pass
+        # Clean up temp files if we created any
+        for attr in ("_schema_tmp_path", "_instructions_tmp_path"):
+            tmp_path = getattr(self, attr, None)
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
         exit_code = self._process.returncode
         if exit_code is not None and exit_code not in (0, -signal.SIGTERM):
